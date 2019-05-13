@@ -25,6 +25,7 @@ import java.net.URI;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
@@ -34,8 +35,10 @@ import org.apache.hadoop.fs.Path;
 import org.slf4j.Logger;
 
 import com.baidu.hugegraph.loader.exception.LoadException;
+import com.baidu.hugegraph.loader.progress.LoadProgress;
 import com.baidu.hugegraph.loader.reader.Readable;
 import com.baidu.hugegraph.loader.reader.file.AbstractFileReader;
+import com.baidu.hugegraph.loader.reader.file.ReadableProgress;
 import com.baidu.hugegraph.loader.source.hdfs.HDFSSource;
 import com.baidu.hugegraph.util.Log;
 
@@ -77,7 +80,6 @@ public class HDFSReader extends AbstractFileReader {
     @Override
     protected Readers openReaders() throws IOException {
         Path path = new Path(this.source().path());
-
         List<Readable> paths = new ArrayList<>();
         if (this.hdfs.isFile(path)) {
             paths.add(new ReadablePath(this.hdfs, path));
@@ -85,11 +87,15 @@ public class HDFSReader extends AbstractFileReader {
             assert this.hdfs.isDirectory(path);
             FileStatus[] statuses = this.hdfs.listStatus(path);
             Path[] subPaths = FileUtil.stat2Paths(statuses);
+            Set<String> loadedItems = this.progress().loadedItems();
             for (Path subPath : subPaths) {
+                if (loadedItems.contains(subPath.getName())) {
+                    continue;
+                }
                 paths.add(new ReadablePath(this.hdfs, subPath));
             }
         }
-        return new Readers(this.source(), paths);
+        return new Readers(this.source(), paths, this.progress().loadingItem());
     }
 
     private Configuration loadConfiguration() {
@@ -145,6 +151,11 @@ public class HDFSReader extends AbstractFileReader {
         @Override
         public InputStream open() throws IOException {
             return this.hdfs.open(this.path);
+        }
+
+        @Override
+        public String uniqueKey() {
+            return this.path.getName();
         }
 
         @Override
