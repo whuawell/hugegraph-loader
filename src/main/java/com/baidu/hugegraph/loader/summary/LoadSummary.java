@@ -17,11 +17,11 @@
  * under the License.
  */
 
-package com.baidu.hugegraph.loader.executor;
+package com.baidu.hugegraph.loader.summary;
 
 import java.time.Duration;
 
-public class LoadSummary {
+public final class LoadSummary {
 
     private final String type;
 
@@ -29,6 +29,9 @@ public class LoadSummary {
     private long insertFailure;
     private long insertSuccess;
     private Duration loadTime;
+
+//    private final LoadMetrics vertexMetrics;
+//    private final LoadMetrics edgeMetrics;
 
     public LoadSummary(String type) {
         this.type = type;
