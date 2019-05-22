@@ -35,23 +35,23 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  */
 public final class LoadProgress {
 
-    private static final String SERIALIZE_FILE_NAME = "progress";
+    private static final String SERIALIZE_FILE = "progress";
 
     @JsonProperty("vertex")
-    private final ElementProgress vertexProgress;
+    private final InputProgressMap vertexProgress;
     @JsonProperty("edge")
-    private final ElementProgress edgeProgress;
+    private final InputProgressMap edgeProgress;
 
     public LoadProgress() {
-        this.vertexProgress = new ElementProgress();
-        this.edgeProgress = new ElementProgress();
+        this.vertexProgress = new InputProgressMap();
+        this.edgeProgress = new InputProgressMap();
     }
 
-    public ElementProgress vertex() {
+    public InputProgressMap vertex() {
         return this.vertexProgress;
     }
 
-    public ElementProgress edge() {
+    public InputProgressMap edge() {
         return this.edgeProgress;
     }
 
@@ -75,6 +75,6 @@ public final class LoadProgress {
     private static String getProgressFileName(String structFileName) {
         int lastDotIdx = structFileName.lastIndexOf(".");
         String prefix = structFileName.substring(0, lastDotIdx);
-        return prefix + "-" + SERIALIZE_FILE_NAME;
+        return prefix + "-" + SERIALIZE_FILE;
     }
 }

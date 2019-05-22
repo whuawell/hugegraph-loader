@@ -27,4 +27,8 @@ public interface LineParser {
     public void init(AbstractFileReader reader);
 
     public Line parse(String rawLine);
+
+    public default boolean parseHeader(String rawLine) {
+        return false;
+    }
 }

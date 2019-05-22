@@ -19,9 +19,9 @@
 
 package com.baidu.hugegraph.loader.task;
 
-import static com.baidu.hugegraph.loader.constant.Constants.BATCH_PRINT_FREQUENCY;
+import static com.baidu.hugegraph.loader.constant.Constants.BATCH_PRINT_FREQ;
 import static com.baidu.hugegraph.loader.constant.Constants.BATCH_WORKER;
-import static com.baidu.hugegraph.loader.constant.Constants.SINGLE_PRINT_FREQUENCY;
+import static com.baidu.hugegraph.loader.constant.Constants.SINGLE_PRINT_FREQ;
 import static com.baidu.hugegraph.loader.constant.Constants.SINGLE_WORKER;
 
 import java.util.List;
@@ -40,6 +40,7 @@ import com.baidu.hugegraph.loader.exception.LoadException;
 import com.baidu.hugegraph.loader.executor.FailureLogger;
 import com.baidu.hugegraph.loader.executor.LoadOptions;
 import com.baidu.hugegraph.loader.summary.LoadMetrics;
+import com.baidu.hugegraph.loader.summary.LoadSummary;
 import com.baidu.hugegraph.loader.util.HugeClientWrapper;
 import com.baidu.hugegraph.loader.util.LoadUtil;
 import com.baidu.hugegraph.loader.util.Printer;
@@ -57,16 +58,18 @@ public final class TaskManager {
                          FailureLogger.logger("edgeInsertError");
 
     private final LoadOptions options;
-    private final LoadMetrics counter;
+    private final LoadMetrics vertexMetrics;
+    private final LoadMetrics edgeMetrics;
 
     private final Semaphore batchSemaphore;
     private final Semaphore singleSemaphore;
     private final ExecutorService batchService;
     private final ExecutorService singleService;
 
-    public TaskManager(LoadOptions options, LoadMetrics counter) {
+    public TaskManager(LoadOptions options, LoadSummary summary) {
         this.options = options;
-        this.counter = counter;
+        this.vertexMetrics = summary.vertexMetrics();
+        this.edgeMetrics = summary.edgeMetrics();
         this.batchSemaphore = new Semaphore(options.numThreads);
         this.singleSemaphore = new Semaphore(options.numThreads);
         this.batchService = ExecutorUtil.newFixedThreadPool(options.numThreads,
@@ -142,8 +145,8 @@ public final class TaskManager {
             return 0;
         }).whenComplete((size, error) -> {
             if (error == null) {
-                this.counter.addInsertSuccessNum(size);
-                printProgress(ElemType.VERTEX, BATCH_PRINT_FREQUENCY, size);
+                this.vertexMetrics.addInsertSuccess(size);
+                Printer.printProgress(this.vertexMetrics, BATCH_PRINT_FREQ, size);
             }
             this.batchSemaphore.release();
         });
@@ -166,8 +169,8 @@ public final class TaskManager {
             return 0;
         }).whenComplete((size, error) -> {
             if (error == null) {
-                this.counter.addInsertSuccessNum(size);
-                this.printProgress(ElemType.EDGE, BATCH_PRINT_FREQUENCY, size);
+                this.edgeMetrics.addInsertSuccess(size);
+                Printer.printProgress(this.edgeMetrics, BATCH_PRINT_FREQ, size);
             }
             this.batchSemaphore.release();
         });
@@ -186,16 +189,16 @@ public final class TaskManager {
             for (Vertex vertex : vertices) {
                 try {
                     graph.addVertex(vertex);
-                    this.counter.increaseInsertSuccessNum();
+                    this.vertexMetrics.increaseInsertSuccess();
                 } catch (Exception e) {
-                    this.counter.increaseInsertFailureNum();
+                    this.vertexMetrics.increaseInsertFailure();
                     LOG.error("Vertex insert error", e);
                     if (this.options.testMode) {
                         throw e;
                     }
                     LOG_VERTEX_INSERT.error(new InsertException(vertex,
                                             e.getMessage()));
-                    if (this.counter.insertFailureNum() >=
+                    if (this.vertexMetrics.insertFailure() >=
                         options.maxInsertErrors) {
                         Printer.printError("Error: More than %s vertices " +
                                            "insert error... stopping",
@@ -204,8 +207,8 @@ public final class TaskManager {
                     }
                 }
             }
-            printProgress(ElemType.VERTEX, SINGLE_PRINT_FREQUENCY,
-                          vertices.size());
+            Printer.printProgress(this.vertexMetrics, SINGLE_PRINT_FREQ,
+                                  vertices.size());
         });
     }
 
@@ -222,9 +225,9 @@ public final class TaskManager {
             for (Edge edge : edges) {
                 try {
                     graph.addEdge(edge);
-                    this.counter.increaseInsertSuccessNum();
+                    this.edgeMetrics.increaseInsertSuccess();
                 } catch (Exception e) {
-                    this.counter.increaseInsertFailureNum();
+                    this.edgeMetrics.increaseInsertFailure();
                     LOG.error("Edge insert error", e);
                     if (this.options.testMode) {
                         throw e;
@@ -232,7 +235,7 @@ public final class TaskManager {
                     LOG_EDGE_INSERT.error(new InsertException(edge,
                                           e.getMessage()));
 
-                    if (this.counter.insertFailureNum() >=
+                    if (this.edgeMetrics.insertFailure() >=
                         options.maxInsertErrors) {
                         Printer.printError("Error: More than %s edges " +
                                            "insert error... stopping",
@@ -241,7 +244,8 @@ public final class TaskManager {
                     }
                 }
             }
-            printProgress(ElemType.EDGE, SINGLE_PRINT_FREQUENCY, edges.size());
+            Printer.printProgress(this.edgeMetrics, SINGLE_PRINT_FREQ,
+                                  edges.size());
         });
     }
 
@@ -251,13 +255,5 @@ public final class TaskManager {
         future.whenComplete((r, error) -> {
             this.singleSemaphore.release();
         });
-    }
-
-    private void printProgress(ElemType type, long frequency, int batchSize) {
-        long loaded = this.counter.insertSuccessNum();
-        Printer.printInBackward(loaded);
-        if (loaded % frequency < batchSize) {
-            LOG.info("{} has been loaded: {}", type.string(), loaded);
-        }
     }
 }

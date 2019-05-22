@@ -33,10 +33,13 @@ import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.fs.Path;
 import org.slf4j.Logger;
 
+import com.baidu.hugegraph.loader.constant.Constants;
 import com.baidu.hugegraph.loader.exception.LoadException;
-import com.baidu.hugegraph.loader.progress.InputItem;
+import com.baidu.hugegraph.loader.progress.InputItemProgress;
 import com.baidu.hugegraph.loader.reader.Readable;
 import com.baidu.hugegraph.loader.reader.file.AbstractFileReader;
+import com.baidu.hugegraph.loader.reader.file.FileItemProgress;
+import com.baidu.hugegraph.loader.reader.file.Readers;
 import com.baidu.hugegraph.loader.source.hdfs.HDFSSource;
 import com.baidu.hugegraph.util.Log;
 
@@ -80,13 +83,13 @@ public class HDFSReader extends AbstractFileReader {
         Path path = new Path(this.source().path());
         List<Readable> paths = new ArrayList<>();
         if (this.hdfs.isFile(path)) {
-            paths.add(new ReadablePath(this.hdfs, path));
+            paths.add(new HDFSFile(this.hdfs, path));
         } else {
             assert this.hdfs.isDirectory(path);
             FileStatus[] statuses = this.hdfs.listStatus(path);
             Path[] subPaths = FileUtil.stat2Paths(statuses);
             for (Path subPath : subPaths) {
-                paths.add(new ReadablePath(this.hdfs, subPath));
+                paths.add(new HDFSFile(this.hdfs, subPath));
             }
         }
         return new Readers(this.source(), paths);
@@ -130,12 +133,12 @@ public class HDFSReader extends AbstractFileReader {
         return new Path(Paths.get(configPath, configFile).toString());
     }
 
-    protected static class ReadablePath implements Readable {
+    protected static class HDFSFile implements Readable {
 
         private final FileSystem hdfs;
         private final Path path;
 
-        private ReadablePath(FileSystem hdfs, Path path) {
+        private HDFSFile(FileSystem hdfs, Path path) {
             this.hdfs = hdfs;
             this.path = path;
         }
@@ -154,8 +157,25 @@ public class HDFSReader extends AbstractFileReader {
         }
 
         @Override
-        public InputItem toInputItem() {
-            return new PathItem(this);
+        public InputItemProgress inputItemProgress() {
+            String name = this.path.getName();
+            long timestamp;
+            try {
+                timestamp = this.hdfs.getFileStatus(this.path)
+                                     .getModificationTime();
+            } catch (IOException e) {
+                throw new LoadException("Failed to get last modified time " +
+                                        "for hdfs path '%s'", e, this.path);
+            }
+            byte[] bytes;
+            try {
+                bytes = this.hdfs.getFileChecksum(this.path).getBytes();
+            } catch (IOException e) {
+                throw new LoadException("Failed to calculate checksum " +
+                                        "for hdfs path '%s'", e, this.path);
+            }
+            String checkSum = new String(bytes, Constants.CHARSET);
+            return new FileItemProgress(name, timestamp, checkSum);
         }
 
         @Override

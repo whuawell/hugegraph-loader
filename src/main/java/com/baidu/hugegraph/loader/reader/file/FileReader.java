@@ -29,10 +29,9 @@ import java.util.List;
 import org.apache.commons.io.FileUtils;
 
 import com.baidu.hugegraph.loader.exception.LoadException;
-import com.baidu.hugegraph.loader.progress.InputItem;
+import com.baidu.hugegraph.loader.progress.InputItemProgress;
 import com.baidu.hugegraph.loader.reader.Readable;
 import com.baidu.hugegraph.loader.source.file.FileSource;
-import com.fasterxml.jackson.annotation.JsonProperty;
 
 public class FileReader extends AbstractFileReader {
 
@@ -47,7 +46,7 @@ public class FileReader extends AbstractFileReader {
 
         List<Readable> files = new ArrayList<>();
         if (file.isFile()) {
-            files.add(new ReadableFile(file));
+            files.add(new LocalFile(file));
         } else {
             assert file.isDirectory();
             File[] subFiles = file.listFiles();
@@ -56,7 +55,7 @@ public class FileReader extends AbstractFileReader {
                                         "path '%s'", file);
             }
             for (File subFile : subFiles) {
-                files.add(new ReadableFile(subFile));
+                files.add(new LocalFile(subFile));
             }
         }
         return new Readers(this.source(), files);
@@ -73,11 +72,11 @@ public class FileReader extends AbstractFileReader {
         }
     }
 
-    protected static class ReadableFile implements Readable {
+    protected static class LocalFile implements Readable {
 
         private final File file;
 
-        public ReadableFile(File file) {
+        public LocalFile(File file) {
             this.file = file;
         }
 
@@ -91,8 +90,17 @@ public class FileReader extends AbstractFileReader {
         }
 
         @Override
-        public InputItem toInputItem() {
-            return new FileItem(this);
+        public InputItemProgress inputItemProgress() {
+            String name = this.file.getName();
+            long timestamp = this.file.lastModified();
+            String checkSum;
+            try {
+                checkSum = String.valueOf(FileUtils.checksumCRC32(this.file));
+            } catch (IOException e) {
+                throw new LoadException("Failed to calculate checksum" +
+                                        "for local file '%s'", e, this.file);
+            }
+            return new FileItemProgress(name, timestamp, checkSum);
         }
 
         @Override

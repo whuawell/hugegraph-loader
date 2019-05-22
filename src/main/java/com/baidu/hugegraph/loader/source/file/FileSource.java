@@ -42,15 +42,16 @@ public class FileSource extends AbstractSource {
     private String charset;
     @JsonProperty("date_format")
     private String dateFormat;
-    @JsonProperty("skipped_line_regex")
-    private String skippedLineRegex;
+    @JsonProperty("skipped_line")
+    private SkippedLine skippedLine;
     @JsonProperty("compression")
     private Compression compression;
 
     public FileSource() {
+        this.header = null;
         this.charset = Constants.CHARSET.name();
         this.dateFormat = Constants.DATE_FORMAT;
-        this.skippedLineRegex = Constants.SKIPPED_LINE_REGEX;
+        this.skippedLine = new SkippedLine();
         this.compression = Compression.NONE;
     }
 
@@ -62,15 +63,11 @@ public class FileSource extends AbstractSource {
     @Override
     public void check() throws IllegalArgumentException {
         if (this.format == FileFormat.CSV) {
-            E.checkArgument(Constants.CSV_DELIMITER.equals(this.delimiter),
+            E.checkArgument(this.delimiter == null ||
+                            this.delimiter.equals(Constants.CSV_DELIMITER),
                             "The delimiter must be '%s' when file format " +
                             "is %s, but got '%s'", Constants.CSV_DELIMITER,
                             this.format, this.delimiter);
-        }
-        if (this.format == FileFormat.TEXT || this.format == FileFormat.CSV) {
-            E.checkArgument(!this.header.isEmpty(),
-                            "The header must be specified when file format " +
-                            "is %s", this.format);
         }
         String elemDelimiter = this.listFormat().elemDelimiter();
         E.checkArgument(!elemDelimiter.equals(this.delimiter),
@@ -87,10 +84,10 @@ public class FileSource extends AbstractSource {
     }
 
     public List<String> header() {
-        if (this.header == null) {
-            return null;
-        } else {
+        if (this.header != null) {
             return Collections.unmodifiableList(this.header);
+        } else {
+            return null;
         }
     }
 
@@ -106,8 +103,8 @@ public class FileSource extends AbstractSource {
         return this.dateFormat;
     }
 
-    public String skippedLineRegex() {
-        return this.skippedLineRegex;
+    public SkippedLine skippedLine() {
+        return this.skippedLine;
     }
 
     public Compression compression() {

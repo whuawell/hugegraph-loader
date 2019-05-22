@@ -829,7 +829,7 @@ public class FileLoadTest extends LoadTest {
     }
 
     @Test
-    public void testFileHasSkippedLine() {
+    public void testFileHasSkippedLineRegex() {
         ioUtil.write("vertex_person.csv",
                      "name,age,city",
                      "# This is a comment",
@@ -839,8 +839,8 @@ public class FileLoadTest extends LoadTest {
                      "vadas,27,//Hongkong");
 
         String[] args = new String[]{
-                "-f", configPath("file_has_skipped_line/struct.json"),
-                "-s", configPath("file_has_skipped_line/schema.groovy"),
+                "-f", configPath("file_has_skipped_line_regex/struct.json"),
+                "-s", configPath("file_has_skipped_line_regex/schema.groovy"),
                 "-g", GRAPH,
                 "-h", SERVER,
                 "--test-mode", "true"

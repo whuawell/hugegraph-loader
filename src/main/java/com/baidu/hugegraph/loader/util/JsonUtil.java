@@ -21,6 +21,7 @@ package com.baidu.hugegraph.loader.util;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import com.baidu.hugegraph.loader.progress.InputProgress;
@@ -79,6 +80,24 @@ public final class JsonUtil {
     public static <T> List<T> convertList(JsonNode node, Class<T> clazz) {
         JavaType type = MAPPER.getTypeFactory()
                               .constructCollectionType(List.class, clazz);
+        return MAPPER.convertValue(node, type);
+    }
+
+    public static <K, V> Map<K, V> convertMap(String json, Class<K> kClazz,
+                                              Class<V> vClazz) {
+        JavaType type = MAPPER.getTypeFactory()
+                              .constructMapType(Map.class, kClazz, vClazz);
+        try {
+            return MAPPER.readValue(json, type);
+        } catch (IOException e) {
+            throw new SerializeException("Failed to deserialize json", e);
+        }
+    }
+
+    public static <K, V> Map<K, V> convertMap(JsonNode node, Class<K> kClazz,
+                                              Class<V> vClazz) {
+        JavaType type = MAPPER.getTypeFactory()
+                              .constructMapType(Map.class, kClazz, vClazz);
         return MAPPER.convertValue(node, type);
     }
 }

@@ -19,11 +19,11 @@
 
 package com.baidu.hugegraph.loader.progress;
 
-import java.util.LinkedHashMap;
+import java.util.HashMap;
 
 import com.baidu.hugegraph.loader.source.graph.ElementSource;
 
-public final class ElementProgress extends LinkedHashMap<String, InputProgress> {
+public final class InputProgressMap extends HashMap<String, InputProgress> {
 
     public InputProgress get(ElementSource source) {
         return this.get(source.uniqueKey());

@@ -21,8 +21,6 @@ package com.baidu.hugegraph.loader;
 
 import java.io.File;
 import java.io.IOException;
-import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -40,7 +38,7 @@ import com.baidu.hugegraph.loader.exception.ParseException;
 import com.baidu.hugegraph.loader.executor.FailureLogger;
 import com.baidu.hugegraph.loader.executor.GroovyExecutor;
 import com.baidu.hugegraph.loader.executor.LoadOptions;
-import com.baidu.hugegraph.loader.progress.ElementProgress;
+import com.baidu.hugegraph.loader.progress.InputProgressMap;
 import com.baidu.hugegraph.loader.progress.LoadProgress;
 import com.baidu.hugegraph.loader.source.graph.EdgeSource;
 import com.baidu.hugegraph.loader.source.graph.GraphSource;
@@ -57,7 +55,7 @@ import com.baidu.hugegraph.util.E;
 import com.baidu.hugegraph.util.Log;
 import com.beust.jcommander.JCommander;
 
-public class HugeGraphLoader {
+public final class HugeGraphLoader {
 
     private static final Logger LOG = Log.logger(HugeGraphLoader.class);
     private static final FailureLogger LOG_PARSE =
@@ -68,7 +66,7 @@ public class HugeGraphLoader {
     // The old progress just used to read
     private final LoadProgress oldProgress;
     private final LoadProgress newProgress;
-    private final LoadMetrics loadMetrics;
+    private final LoadSummary loadSummary;
     private final TaskManager taskManager;
 
     public static void main(String[] args) {
@@ -81,8 +79,8 @@ public class HugeGraphLoader {
         this.graphSource = GraphSource.of(this.options.file);
         this.oldProgress = parseLoadProgress(this.options);
         this.newProgress = new LoadProgress();
-        this.loadMetrics = new LoadMetrics();
-        this.taskManager = new TaskManager(this.options, this.loadMetrics);
+        this.loadSummary = new LoadSummary();
+        this.taskManager = new TaskManager(this.options, this.loadSummary);
         // Add shutdown hook
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             try {
@@ -140,19 +138,13 @@ public class HugeGraphLoader {
         this.createSchema();
 
         // Load vertices
-        LoadSummary vertexSummary = this.loadWithMetric(ElemType.VERTEX);
+        this.loadVertices(this.loadSummary.vertexMetrics());
         // Load edges
-        LoadSummary edgeSummary = this.loadWithMetric(ElemType.EDGE);
+        this.loadEdges(this.loadSummary.edgeMetrics());
         // Print load summary
-        Printer.printSummary(vertexSummary, edgeSummary);
+        Printer.printSummary(this.loadSummary);
 
         this.stopLoading(Constants.EXIT_CODE_NORM);
-    }
-
-    private void stopLoading(int code) {
-        // Shutdown task manager
-        this.taskManager.shutdown(this.options.shutdownTimeout);
-        LoadUtil.exit(code);
     }
 
     private void createSchema() {
@@ -170,52 +162,31 @@ public class HugeGraphLoader {
         groovyExecutor.execute(script, client);
     }
 
-    private LoadSummary loadWithMetric(ElemType type) {
-        Printer.printElemType(type);
-        Instant beginTime = Instant.now();
-
-        if (type.isVertex()) {
-            this.loadVertices();
-        } else {
-            assert type.isEdge();
-            this.loadEdges();
-        }
-
-        Instant endTime = Instant.now();
-        LoadSummary summary = new LoadSummary(type.string());
-        Duration duration = Duration.between(beginTime, endTime);
-        summary.parseFailure(this.loadMetrics.parseFailureNum());
-        summary.insertSuccess(this.loadMetrics.insertSuccessNum());
-        summary.insertFailure(this.loadMetrics.insertFailureNum());
-        summary.loadTime(duration);
-
-        Printer.print(summary.insertSuccess());
-        // Reset counters
-        this.loadMetrics.reset();
-        return summary;
-    }
-
-    private void loadVertices() {
+    private void loadVertices(LoadMetrics metrics) {
+        Printer.printElemType(metrics.type());
+        metrics.startTimer();
         // Used to get and update progress
-        ElementProgress oldVertexProgress = this.oldProgress.vertex();
-        ElementProgress newVertexProgress = this.newProgress.vertex();
+        InputProgressMap oldVertexProgress = this.oldProgress.vertex();
+        InputProgressMap newVertexProgress = this.newProgress.vertex();
         // Execute loading tasks
         List<VertexSource> vertexSources = this.graphSource.vertexSources();
         for (VertexSource source : vertexSources) {
             // Update loading element source
             newVertexProgress.addSource(source);
             LOG.info("Loading vertex source '{}'", source.label());
-            try (VertexBuilder builder = new VertexBuilder(source, this.options)) {
+            try (VertexBuilder builder = new VertexBuilder(source,
+                                                           this.options)) {
                 builder.progress(oldVertexProgress, newVertexProgress);
-                builder.init();
-                this.loadVertex(builder);
+                this.loadVertex(builder, metrics);
             }
         }
         // Waiting async worker threads finish
         this.taskManager.waitFinished(ElemType.VERTEX);
+        metrics.stopTimer();
+        Printer.print(metrics.insertSuccess());
     }
 
-    private void loadVertex(VertexBuilder builder) {
+    private void loadVertex(VertexBuilder builder, LoadMetrics metrics) {
         int batchSize = this.options.batchSize;
         List<Vertex> batch = new ArrayList<>(batchSize);
         while (builder.hasNext()) {
@@ -228,7 +199,7 @@ public class HugeGraphLoader {
                 }
                 LOG.error("Vertex parse error", e);
                 LOG_PARSE.error(e);
-                long failureNum = this.loadMetrics.increaseParseFailureNum();
+                long failureNum = metrics.increaseParseFailure();
                 if (failureNum >= this.options.maxParseErrors) {
                     Printer.printError("Error: More than %s vertices " +
                                        "parsing error ... stopping",
@@ -247,10 +218,12 @@ public class HugeGraphLoader {
         }
     }
 
-    private void loadEdges() {
+    private void loadEdges(LoadMetrics metrics) {
+        Printer.printElemType(metrics.type());
+        metrics.startTimer();
         // Used to get and update progress
-        ElementProgress oldEdgeProgress = this.oldProgress.edge();
-        ElementProgress newEdgeProgress = this.newProgress.edge();
+        InputProgressMap oldEdgeProgress = this.oldProgress.edge();
+        InputProgressMap newEdgeProgress = this.newProgress.edge();
         // Execute loading tasks
         List<EdgeSource> edgeSources = this.graphSource.edgeSources();
         for (EdgeSource source : edgeSources) {
@@ -259,15 +232,16 @@ public class HugeGraphLoader {
             LOG.info("Loading edge source '{}'", source.label());
             try (EdgeBuilder builder = new EdgeBuilder(source, this.options)) {
                 builder.progress(oldEdgeProgress, newEdgeProgress);
-                builder.init();
-                this.loadEdge(builder);
+                this.loadEdge(builder, metrics);
             }
         }
         // Waiting async worker threads finish
         this.taskManager.waitFinished(ElemType.EDGE);
+        metrics.stopTimer();
+        Printer.print(metrics.insertSuccess());
     }
 
-    private void loadEdge(EdgeBuilder builder) {
+    private void loadEdge(EdgeBuilder builder, LoadMetrics metrics) {
         int batchSize = this.options.batchSize;
         List<Edge> batch = new ArrayList<>(batchSize);
         while (builder.hasNext()) {
@@ -280,7 +254,7 @@ public class HugeGraphLoader {
                 }
                 LOG.error("Edge parse error", e);
                 LOG_PARSE.error(e);
-                long failureNum = this.loadMetrics.increaseParseFailureNum();
+                long failureNum = metrics.increaseParseFailure();
                 if (failureNum >= this.options.maxParseErrors) {
                     Printer.printError("Error: More than %s edges " +
                                        "parsing error ... stopping",
@@ -296,6 +270,15 @@ public class HugeGraphLoader {
         }
         if (!batch.isEmpty()) {
             this.taskManager.submitEdgeBatch(batch);
+        }
+    }
+
+    private void stopLoading(int code) {
+        // Shutdown task manager
+        this.taskManager.shutdown(this.options.shutdownTimeout);
+        // Exit JVM if the code is not EXIT_CODE_NORM
+        if (Constants.EXIT_CODE_NORM != code) {
+            LoadUtil.exit(code);
         }
     }
 }

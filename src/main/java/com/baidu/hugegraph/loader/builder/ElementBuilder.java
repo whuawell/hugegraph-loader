@@ -27,18 +27,18 @@ import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 
 import com.baidu.hugegraph.driver.HugeClient;
+import com.baidu.hugegraph.loader.constant.AutoCloseableIterator;
 import com.baidu.hugegraph.loader.constant.Constants;
 import com.baidu.hugegraph.loader.exception.LoadException;
 import com.baidu.hugegraph.loader.exception.ParseException;
 import com.baidu.hugegraph.loader.executor.LoadOptions;
-import com.baidu.hugegraph.loader.progress.ElementProgress;
 import com.baidu.hugegraph.loader.progress.InputProgress;
+import com.baidu.hugegraph.loader.progress.InputProgressMap;
 import com.baidu.hugegraph.loader.reader.InputReader;
 import com.baidu.hugegraph.loader.reader.InputReaderFactory;
 import com.baidu.hugegraph.loader.reader.Line;
-import com.baidu.hugegraph.loader.source.graph.ElementSource;
 import com.baidu.hugegraph.loader.source.InputSource;
-import com.baidu.hugegraph.loader.constant.AutoCloseableIterator;
+import com.baidu.hugegraph.loader.source.graph.ElementSource;
 import com.baidu.hugegraph.loader.util.DataTypeUtil;
 import com.baidu.hugegraph.loader.util.HugeClientWrapper;
 import com.baidu.hugegraph.structure.GraphElement;
@@ -66,26 +66,23 @@ public abstract class ElementBuilder<GE extends GraphElement>
 
     public ElementBuilder(ElementSource source, LoadOptions options) {
         this.reader = InputReaderFactory.create(source.input());
+        try {
+            this.reader.init();
+        } catch (Exception e) {
+            throw new LoadException("Failed to init input reader", e);
+        }
         this.client = HugeClientWrapper.get(options);
         this.schemas = HashBasedTable.create();
     }
 
     public abstract ElementSource source();
 
-    public void init() {
-        try {
-            this.reader.init();
-        } catch (Exception e) {
-            throw new LoadException("Failed to init input reader", e);
-        }
-    }
-
     public InputReader reader() {
         return this.reader;
     }
 
-    public void progress(ElementProgress oldProgress,
-                         ElementProgress newProgress) {
+    public void progress(InputProgressMap oldProgress,
+                         InputProgressMap newProgress) {
         ElementSource source = this.source();
         InputProgress oldInputProgress = oldProgress.get(source);
         if (oldInputProgress == null) {
